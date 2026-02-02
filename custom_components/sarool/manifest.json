@@ -1,14 +1,12 @@
 {
-  "domain": "Sarool",
-  "name": "Sarool API",
-  "after_dependencies": ["http"],
-  "codeowners": ["@furi-go"],
-  "dependencies": [""],
-  "documentation": "",
-  "integration_type": "",
-  "iot_class": "local_polling",
-  "issue_tracker": "",
-  "loggers": [""],
-  "requirements": [""],
-  "quality_scale": ""
+  "domain": "sarool",
+  "name": "Sarool",
+  "codeowners": ["@FURI-GO"],
+  "config_flow": true,
+  "documentation": "https://github.com/FURI-GO/ha-sarool",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/FURI-GO/ha-sarool/issues",
+  "requirements": ["aiohttp>=3.8.0"],
+  "version": "1.0.0"
 }
