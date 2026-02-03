@@ -87,76 +87,100 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
         return self._convert_rdv_to_event(next_rdv)
 
     async def async_get_events(
-        self, hass: HomeAssistant, start_date: datetime, end_date: datetime
-    ) -> list[CalendarEvent]:
-        """Retourne les événements entre deux dates.
+    self, hass: HomeAssistant, start_date: datetime, end_date: datetime
+) -> list[CalendarEvent]:
+    """Retourne les événements entre deux dates.
+    
+    Cette méthode est appelée par Home Assistant pour afficher
+    les événements dans le calendrier.
+    
+    Args:
+        hass: Instance Home Assistant
+        start_date: Date de début
+        end_date: Date de fin
         
-        Cette méthode est appelée par Home Assistant pour afficher
-        les événements dans le calendrier.
-        
-        Args:
-            hass: Instance Home Assistant
-            start_date: Date de début
-            end_date: Date de fin
+    Returns:
+        Liste des événements dans la période demandée
+    """
+    if not self.coordinator.data:
+        return []
+
+    planning = self.coordinator.data.get("planning", {})
+    rdvs = planning.get("RendezVous", [])
+
+    from zoneinfo import ZoneInfo
+    paris_tz = ZoneInfo("Europe/Paris")
+
+    # Filtrer les rendez-vous dans la période demandée
+    events = []
+    for rdv in rdvs:
+        try:
+            start_str = rdv["DateDebut"].replace("Z", "")
+            end_str = rdv["DateFin"].replace("Z", "")
             
-        Returns:
-            Liste des événements dans la période demandée
-        """
-        if not self.coordinator.data:
-            return []
-
-        planning = self.coordinator.data.get("planning", {})
-        rdvs = planning.get("RendezVous", [])
-
-        # Filtrer les rendez-vous dans la période demandée
-        events = []
-        for rdv in rdvs:
-            rdv_start = datetime.fromisoformat(rdv["DateDebut"].replace("Z", "+00:00"))
-            rdv_end = datetime.fromisoformat(rdv["DateFin"].replace("Z", "+00:00"))
+            rdv_start_naive = datetime.fromisoformat(start_str)
+            rdv_end_naive = datetime.fromisoformat(end_str)
+            
+            rdv_start = rdv_start_naive.replace(tzinfo=paris_tz)
+            rdv_end = rdv_end_naive.replace(tzinfo=paris_tz)
 
             # Vérifier si le rendez-vous est dans la période
             if rdv_start <= end_date and rdv_end >= start_date:
                 events.append(self._convert_rdv_to_event(rdv))
+        except (ValueError, KeyError) as e:
+            _LOGGER.debug(f"Erreur parsing rdv pour calendrier: {e}")
+            continue
 
-        return events
-
+    return events
     def _convert_rdv_to_event(self, rdv: dict[str, Any]) -> CalendarEvent:
-        """Convertit un rendez-vous Sarool en événement de calendrier.
+    """Convertit un rendez-vous Sarool en événement de calendrier.
+    
+    Args:
+        rdv: Dictionnaire représentant un rendez-vous Sarool
         
-        Args:
-            rdv: Dictionnaire représentant un rendez-vous Sarool
-            
-        Returns:
-            CalendarEvent pour Home Assistant
-        """
-        # Parser les dates
-        start = datetime.fromisoformat(rdv["DateDebut"].replace("Z", "+00:00"))
-        end = datetime.fromisoformat(rdv["DateFin"].replace("Z", "+00:00"))
+    Returns:
+        CalendarEvent pour Home Assistant
+    """
+    from zoneinfo import ZoneInfo
+    
+    # Timezone française (l'API retourne des dates locales françaises)
+    paris_tz = ZoneInfo("Europe/Paris")
+    
+    # Parser les dates (sans timezone dans l'API)
+    start_str = rdv["DateDebut"].replace("Z", "")
+    end_str = rdv["DateFin"].replace("Z", "")
+    
+    start_naive = datetime.fromisoformat(start_str)
+    end_naive = datetime.fromisoformat(end_str)
+    
+    # Ajouter la timezone
+    start = start_naive.replace(tzinfo=paris_tz)
+    end = end_naive.replace(tzinfo=paris_tz)
 
-        # Construire le titre
-        libelle = rdv.get("Libelle", "Leçon de conduite")
-        moniteur = rdv.get("Moniteur", "")
-        if moniteur:
-            title = f"{libelle} - {moniteur}"
-        else:
-            title = libelle
+    # Construire le titre
+    libelle = rdv.get("Libelle", "Leçon de conduite")
+    moniteur = rdv.get("Moniteur", "")
+    if moniteur:
+        title = f"{libelle} - {moniteur}"
+    else:
+        title = libelle
 
-        # Construire la description
-        description_parts = []
-        if rdv.get("LieuRdv"):
-            description_parts.append(f"Lieu: {rdv['LieuRdv']}")
-        if rdv.get("Commentaire"):
-            description_parts.append(f"Commentaire: {rdv['Commentaire']}")
+    # Construire la description
+    description_parts = []
+    if rdv.get("LieuRdv"):
+        description_parts.append(f"Lieu: {rdv['LieuRdv']}")
+    if rdv.get("Commentaire"):
+        description_parts.append(f"Commentaire: {rdv['Commentaire']}")
 
-        description = "\n".join(description_parts) if description_parts else None
+    description = "\n".join(description_parts) if description_parts else None
 
-        # Construire le lieu
-        location = rdv.get("LieuRdv")
+    # Construire le lieu
+    location = rdv.get("LieuRdv")
 
-        return CalendarEvent(
-            start=start,
-            end=end,
-            summary=title,
-            description=description,
-            location=location,
-        )
+    return CalendarEvent(
+        start=start,
+        end=end,
+        summary=title,
+        description=description,
+        location=location,
+    )

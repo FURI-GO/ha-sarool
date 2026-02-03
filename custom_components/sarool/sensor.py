@@ -81,7 +81,6 @@ class SaroolSensorBase(CoordinatorEntity, SensorEntity):
             "model": "Auto-école",
         }
 
-
 class SaroolNextLessonSensor(SaroolSensorBase):
     """Capteur pour la prochaine leçon de conduite."""
 
@@ -105,21 +104,44 @@ class SaroolNextLessonSensor(SaroolSensorBase):
         planning = self.coordinator.data.get("planning", {})
         rdvs = planning.get("RendezVous", [])
 
-        # Filtrer les rendez-vous futurs et trier par date
-        now = datetime.now()
-        future_rdvs = [
-            rdv for rdv in rdvs
-            if datetime.fromisoformat(rdv["DateDebut"].replace("Z", "+00:00")) > now
-        ]
+        if not rdvs:
+            return None
+
+        # L'API Sarool retourne des dates SANS timezone (format local français)
+        # On doit les convertir en UTC pour Home Assistant
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+        
+        # Timezone française
+        paris_tz = ZoneInfo("Europe/Paris")
+        now = datetime.now(paris_tz)
+        
+        future_rdvs = []
+        for rdv in rdvs:
+            try:
+                # Parser la date sans timezone
+                date_str = rdv["DateDebut"]
+                # Supprimer le "Z" s'il existe (mais normalement non d'après votre exemple)
+                date_str = date_str.replace("Z", "")
+                
+                # Parser comme datetime naïve
+                rdv_date_naive = datetime.fromisoformat(date_str)
+                
+                # Ajouter la timezone française
+                rdv_date = rdv_date_naive.replace(tzinfo=paris_tz)
+                
+                if rdv_date > now:
+                    future_rdvs.append((rdv, rdv_date))
+            except (ValueError, KeyError) as e:
+                _LOGGER.debug(f"Erreur parsing date: {e}")
+                continue
 
         if not future_rdvs:
             return None
 
         # Trier et prendre le premier
-        future_rdvs.sort(key=lambda x: x["DateDebut"])
-        next_rdv = future_rdvs[0]
-
-        return datetime.fromisoformat(next_rdv["DateDebut"].replace("Z", "+00:00"))
+        future_rdvs.sort(key=lambda x: x[1])
+        return future_rdvs[0][1]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -134,26 +156,41 @@ class SaroolNextLessonSensor(SaroolSensorBase):
         planning = self.coordinator.data.get("planning", {})
         rdvs = planning.get("RendezVous", [])
 
-        now = datetime.now()
-        future_rdvs = [
-            rdv for rdv in rdvs
-            if datetime.fromisoformat(rdv["DateDebut"].replace("Z", "+00:00")) > now
-        ]
+        if not rdvs:
+            return {}
+
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
+        
+        paris_tz = ZoneInfo("Europe/Paris")
+        now = datetime.now(paris_tz)
+        
+        future_rdvs = []
+        for rdv in rdvs:
+            try:
+                date_str = rdv["DateDebut"].replace("Z", "")
+                rdv_date_naive = datetime.fromisoformat(date_str)
+                rdv_date = rdv_date_naive.replace(tzinfo=paris_tz)
+                
+                if rdv_date > now:
+                    future_rdvs.append((rdv, rdv_date))
+            except (ValueError, KeyError):
+                continue
 
         if not future_rdvs:
             return {}
 
-        future_rdvs.sort(key=lambda x: x["DateDebut"])
-        next_rdv = future_rdvs[0]
+        future_rdvs.sort(key=lambda x: x[1])
+        next_rdv = future_rdvs[0][0]  # On prend le rdv, pas la date
 
         return {
-            ATTR_MONITEUR: next_rdv.get("Moniteur", "Non défini"),
-            ATTR_LIEU_RDV: next_rdv.get("LieuRdv", "Non défini"),
+            ATTR_MONITEUR: next_rdv.get("Moniteur") or "Non défini",
+            ATTR_LIEU_RDV: next_rdv.get("LieuRdv") or "Non défini",
             ATTR_COMMENTAIRE: next_rdv.get("Commentaire", ""),
             "libelle": next_rdv.get("Libelle", ""),
             "date_fin": next_rdv.get("DateFin", ""),
+            "id": next_rdv.get("ID", ""),
         }
-
 
 class SaroolBalanceSensor(SaroolSensorBase):
     """Capteur pour le solde de l'élève."""
