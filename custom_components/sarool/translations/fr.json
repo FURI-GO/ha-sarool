@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Configuration Sarool",
+        "description": "Entrez vos identifiants Sarool pour connecter votre compte.",
+        "data": {
+          "username": "Identifiant",
+          "password": "Mot de passe",
+          "device_name": "Nom du périphérique"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Identifiant ou mot de passe incorrect",
+      "unknown": "Une erreur inattendue s'est produite"
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré"
+    }
+  }
+}
