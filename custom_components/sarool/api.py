@@ -175,6 +175,28 @@ class SaroolApiClient:
         except ClientError as err:
             raise SaroolApiError(f"Erreur de connexion: {err}") from err
 
+    async def get_student_lessons(self) -> dict[str, Any]:
+        """Récupère la liste complète des leçons de l'élève (F2/Lecons).
+        
+        Cette méthode retourne TOUTES les leçons (passées et futures)
+        sans limitation de date.
+        
+        Returns:
+            Dictionnaire avec la liste des leçons
+        """
+        try:
+            async with self._session.get(
+                f"{API_F2}/Lecons", headers=self._get_headers()
+            ) as response:
+                if response.status == 200:
+                    return await response.json()
+                elif response.status == 401:
+                    raise SaroolApiError("Échec d'authentification")
+                else:
+                    raise SaroolApiError(f"Erreur API: {response.status}")
+        except ClientError as err:
+            raise SaroolApiError(f"Erreur de connexion: {err}") from err
+
     async def get_user_data(
         self,
         with_persistent: bool = True,
@@ -214,36 +236,32 @@ class SaroolApiClient:
         except ClientError as err:
             raise SaroolApiError(f"Erreur de connexion: {err}") from err
 
-    async def get_all_data(self) -> dict[str, Any]:
+async def get_all_data(self) -> dict[str, Any]:
         """Récupère toutes les données de l'élève en parallèle.
         
         Returns:
             Dictionnaire avec toutes les données combinées
         """
-        # Calculer les dates pour le planning (7 prochains jours)
-        from datetime import timedelta
-        now = datetime.now()
-        date_fin = now + timedelta(days=7)
-
         try:
             # Récupérer toutes les données en parallèle
-            info, recap, planning, user_data = await asyncio.gather(
+            # On utilise F2/Lecons au lieu de F3 car il retourne TOUTES les leçons
+            info, recap, lessons, user_data = await asyncio.gather(
                 self.get_student_info(),
                 self.get_student_recap(),
-                self.get_student_planning(now, date_fin),
+                self.get_student_lessons(),  # ← Nouvelle méthode
                 self.get_user_data(),
                 return_exceptions=True,
             )
 
             # Vérifier les erreurs
-            for data in [info, recap, planning, user_data]:
+            for data in [info, recap, lessons, user_data]:
                 if isinstance(data, Exception):
                     raise data
 
             return {
                 "info": info,
                 "recap": recap,
-                "planning": planning,
+                "lessons": lessons,  # ← Leçons au lieu de planning
                 "user_data": user_data,
             }
         except Exception as err:

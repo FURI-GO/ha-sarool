@@ -101,47 +101,42 @@ class SaroolNextLessonSensor(SaroolSensorBase):
         if not self.coordinator.data:
             return None
 
-        planning = self.coordinator.data.get("planning", {})
-        rdvs = planning.get("RendezVous", [])
+        lessons_data = self.coordinator.data.get("lessons", {})
+        lecons = lessons_data.get("Lecons", [])
 
-        if not rdvs:
+        if not lecons:
             return None
 
         # L'API Sarool retourne des dates SANS timezone (format local français)
-        # On doit les convertir en UTC pour Home Assistant
-        from datetime import timezone
         from zoneinfo import ZoneInfo
         
-        # Timezone française
         paris_tz = ZoneInfo("Europe/Paris")
         now = datetime.now(paris_tz)
         
-        future_rdvs = []
-        for rdv in rdvs:
+        future_lessons = []
+        for lecon in lecons:
             try:
-                # Parser la date sans timezone
-                date_str = rdv["DateDebut"]
-                # Supprimer le "Z" s'il existe (mais normalement non d'après votre exemple)
-                date_str = date_str.replace("Z", "")
+                # Ignorer les leçons annulées
+                if lecon.get("IsAnnule", 0) == 1:
+                    continue
                 
-                # Parser comme datetime naïve
-                rdv_date_naive = datetime.fromisoformat(date_str)
+                # Parser la date
+                date_str = lecon["Date"]
+                lesson_date_naive = datetime.fromisoformat(date_str)
+                lesson_date = lesson_date_naive.replace(tzinfo=paris_tz)
                 
-                # Ajouter la timezone française
-                rdv_date = rdv_date_naive.replace(tzinfo=paris_tz)
-                
-                if rdv_date > now:
-                    future_rdvs.append((rdv, rdv_date))
+                if lesson_date > now:
+                    future_lessons.append((lecon, lesson_date))
             except (ValueError, KeyError) as e:
-                _LOGGER.debug(f"Erreur parsing date: {e}")
+                _LOGGER.debug(f"Erreur parsing date leçon: {e}")
                 continue
 
-        if not future_rdvs:
+        if not future_lessons:
             return None
 
-        # Trier et prendre le premier
-        future_rdvs.sort(key=lambda x: x[1])
-        return future_rdvs[0][1]
+        # Trier et prendre la première
+        future_lessons.sort(key=lambda x: x[1])
+        return future_lessons[0][1]
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -153,45 +148,48 @@ class SaroolNextLessonSensor(SaroolSensorBase):
         if not self.coordinator.data:
             return {}
 
-        planning = self.coordinator.data.get("planning", {})
-        rdvs = planning.get("RendezVous", [])
+        lessons_data = self.coordinator.data.get("lessons", {})
+        lecons = lessons_data.get("Lecons", [])
 
-        if not rdvs:
+        if not lecons:
             return {}
 
-        from datetime import timezone
         from zoneinfo import ZoneInfo
         
         paris_tz = ZoneInfo("Europe/Paris")
         now = datetime.now(paris_tz)
         
-        future_rdvs = []
-        for rdv in rdvs:
+        future_lessons = []
+        for lecon in lecons:
             try:
-                date_str = rdv["DateDebut"].replace("Z", "")
-                rdv_date_naive = datetime.fromisoformat(date_str)
-                rdv_date = rdv_date_naive.replace(tzinfo=paris_tz)
+                if lecon.get("IsAnnule", 0) == 1:
+                    continue
                 
-                if rdv_date > now:
-                    future_rdvs.append((rdv, rdv_date))
+                date_str = lecon["Date"]
+                lesson_date_naive = datetime.fromisoformat(date_str)
+                lesson_date = lesson_date_naive.replace(tzinfo=paris_tz)
+                
+                if lesson_date > now:
+                    future_lessons.append((lecon, lesson_date))
             except (ValueError, KeyError):
                 continue
 
-        if not future_rdvs:
+        if not future_lessons:
             return {}
 
-        future_rdvs.sort(key=lambda x: x[1])
-        next_rdv = future_rdvs[0][0]  # On prend le rdv, pas la date
+        future_lessons.sort(key=lambda x: x[1])
+        next_lesson = future_lessons[0][0]
 
         return {
-            ATTR_MONITEUR: next_rdv.get("Moniteur") or "Non défini",
-            ATTR_LIEU_RDV: next_rdv.get("LieuRdv") or "Non défini",
-            ATTR_COMMENTAIRE: next_rdv.get("Commentaire", ""),
-            "libelle": next_rdv.get("Libelle", ""),
-            "date_fin": next_rdv.get("DateFin", ""),
-            "id": next_rdv.get("ID", ""),
+            ATTR_MONITEUR: next_lesson.get("Formateur") or "Non défini",
+            ATTR_LIEU_RDV: next_lesson.get("LieuRdv") or "Non défini",
+            ATTR_COMMENTAIRE: next_lesson.get("Commentaire", ""),
+            "libelle": next_lesson.get("Libelle", ""),
+            "duree": next_lesson.get("Duree", 0),
+            "numero": next_lesson.get("Numero", 0),
+            "id": next_lesson.get("IdRdvEleve", ""),
         }
-
+    
 class SaroolBalanceSensor(SaroolSensorBase):
     """Capteur pour le solde de l'élève."""
 

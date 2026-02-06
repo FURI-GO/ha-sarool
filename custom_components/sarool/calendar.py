@@ -56,145 +56,128 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Retourne le prochain événement du calendrier.
-        
-        Cette propriété est utilisée par Home Assistant pour afficher
-        le prochain événement dans l'interface.
-        
-        Returns:
-            Le prochain événement ou None
-        """
+        """Retourne le prochain événement du calendrier."""
         if not self.coordinator.data:
             return None
 
-        planning = self.coordinator.data.get("planning", {})
-        rdvs = planning.get("RendezVous", [])
+        lessons_data = self.coordinator.data.get("lessons", {})
+        lecons = lessons_data.get("Lecons", [])
 
-        if not rdvs:
+        if not lecons:
             return None
 
         from zoneinfo import ZoneInfo
         paris_tz = ZoneInfo("Europe/Paris")
         now = datetime.now(paris_tz)
 
-        # Filtrer les rendez-vous futurs
-        future_rdvs = []
-        for rdv in rdvs:
+        # Filtrer les leçons futures non annulées
+        future_lessons = []
+        for lecon in lecons:
             try:
-                date_str = rdv["DateDebut"].replace("Z", "")
-                rdv_date_naive = datetime.fromisoformat(date_str)
-                rdv_date = rdv_date_naive.replace(tzinfo=paris_tz)
+                if lecon.get("IsAnnule", 0) == 1:
+                    continue
+                    
+                date_str = lecon["Date"]
+                lesson_date_naive = datetime.fromisoformat(date_str)
+                lesson_date = lesson_date_naive.replace(tzinfo=paris_tz)
                 
-                if rdv_date > now:
-                    future_rdvs.append((rdv, rdv_date))
+                if lesson_date > now:
+                    future_lessons.append((lecon, lesson_date))
             except (ValueError, KeyError):
                 continue
 
-        if not future_rdvs:
+        if not future_lessons:
             return None
 
-        # Trier et prendre le premier
-        future_rdvs.sort(key=lambda x: x[1])
-        next_rdv = future_rdvs[0][0]
+        # Trier et prendre la première
+        future_lessons.sort(key=lambda x: x[1])
+        next_lesson = future_lessons[0][0]
 
-        return self._convert_rdv_to_event(next_rdv)
+        return self._convert_lesson_to_event(next_lesson)
 
-    async def async_get_events(
+async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
-        """Retourne les événements entre deux dates.
-        
-        Cette méthode est appelée par Home Assistant pour afficher
-        les événements dans le calendrier.
-        
-        Args:
-            hass: Instance Home Assistant
-            start_date: Date de début
-            end_date: Date de fin
-            
-        Returns:
-            Liste des événements dans la période demandée
-        """
+        """Retourne les événements entre deux dates."""
         if not self.coordinator.data:
             return []
 
-        planning = self.coordinator.data.get("planning", {})
-        rdvs = planning.get("RendezVous", [])
+        lessons_data = self.coordinator.data.get("lessons", {})
+        lecons = lessons_data.get("Lecons", [])
 
         from zoneinfo import ZoneInfo
         paris_tz = ZoneInfo("Europe/Paris")
 
-        # Filtrer les rendez-vous dans la période demandée
+        # Filtrer les leçons dans la période demandée
         events = []
-        for rdv in rdvs:
+        for lecon in lecons:
             try:
-                start_str = rdv["DateDebut"].replace("Z", "")
-                end_str = rdv["DateFin"].replace("Z", "")
+                # Ignorer les leçons annulées
+                if lecon.get("IsAnnule", 0) == 1:
+                    continue
                 
-                rdv_start_naive = datetime.fromisoformat(start_str)
-                rdv_end_naive = datetime.fromisoformat(end_str)
+                date_str = lecon["Date"]
+                duree = lecon.get("Duree", 60)  # Durée en minutes
                 
-                rdv_start = rdv_start_naive.replace(tzinfo=paris_tz)
-                rdv_end = rdv_end_naive.replace(tzinfo=paris_tz)
+                lesson_start_naive = datetime.fromisoformat(date_str)
+                lesson_start = lesson_start_naive.replace(tzinfo=paris_tz)
+                lesson_end = lesson_start + timedelta(minutes=duree)
 
-                # Vérifier si le rendez-vous est dans la période
-                if rdv_start <= end_date and rdv_end >= start_date:
-                    events.append(self._convert_rdv_to_event(rdv))
+                # Vérifier si la leçon est dans la période
+                if lesson_start <= end_date and lesson_end >= start_date:
+                    events.append(self._convert_lesson_to_event(lecon))
             except (ValueError, KeyError) as e:
-                _LOGGER.debug(f"Erreur parsing rdv pour calendrier: {e}")
+                _LOGGER.debug(f"Erreur parsing leçon pour calendrier: {e}")
                 continue
 
         return events
-
-    def _convert_rdv_to_event(self, rdv: dict[str, Any]) -> CalendarEvent:
-        """Convertit un rendez-vous Sarool en événement de calendrier.
+   
+def _convert_lesson_to_event(self, lecon: dict[str, Any]) -> CalendarEvent:
+        """Convertit une leçon Sarool en événement de calendrier.
         
         Args:
-            rdv: Dictionnaire représentant un rendez-vous Sarool
+            lecon: Dictionnaire représentant une leçon Sarool
             
         Returns:
             CalendarEvent pour Home Assistant
         """
         from zoneinfo import ZoneInfo
         
-        # Timezone française (l'API retourne des dates locales françaises)
         paris_tz = ZoneInfo("Europe/Paris")
         
-        # Parser les dates (sans timezone dans l'API)
-        start_str = rdv["DateDebut"].replace("Z", "")
-        end_str = rdv["DateFin"].replace("Z", "")
+        # Parser la date
+        date_str = lecon["Date"]
+        duree = lecon.get("Duree", 60)  # Durée en minutes
         
-        start_naive = datetime.fromisoformat(start_str)
-        end_naive = datetime.fromisoformat(end_str)
-        
-        # Ajouter la timezone
+        start_naive = datetime.fromisoformat(date_str)
         start = start_naive.replace(tzinfo=paris_tz)
-        end = end_naive.replace(tzinfo=paris_tz)
+        end = start + timedelta(minutes=duree)
 
         # Construire le titre
-        libelle = rdv.get("Libelle", "Leçon de conduite")
-        moniteur = rdv.get("Moniteur", "")
-        if moniteur:
-            title = f"{libelle} - {moniteur}"
+        libelle = lecon.get("Libelle", "Leçon de conduite")
+        formateur = lecon.get("Formateur", "")
+        numero = lecon.get("Numero", "")
+        
+        if formateur:
+            title = f"{libelle} #{numero} - {formateur}"
         else:
-            title = libelle
+            title = f"{libelle} #{numero}"
 
         # Construire la description
         description_parts = []
-        if rdv.get("LieuRdv"):
-            description_parts.append(f"Lieu: {rdv['LieuRdv']}")
-        if rdv.get("Commentaire"):
-            description_parts.append(f"Commentaire: {rdv['Commentaire']}")
+        if lecon.get("LieuRdv"):
+            description_parts.append(f"Lieu: {lecon['LieuRdv']}")
+        if lecon.get("Commentaire"):
+            description_parts.append(f"Commentaire: {lecon['Commentaire']}")
+        if lecon.get("SuiviPedago"):
+            description_parts.append(f"Suivi: {lecon['SuiviPedago']}")
 
         description = "\n".join(description_parts) if description_parts else None
-
-        # Construire le lieu
-        location = rdv.get("LieuRdv")
 
         return CalendarEvent(
             start=start,
             end=end,
             summary=title,
             description=description,
-            location=location,
+            location=lecon.get("LieuRdv"),
         )
