@@ -236,7 +236,7 @@ class SaroolApiClient:
         except ClientError as err:
             raise SaroolApiError(f"Erreur de connexion: {err}") from err
 
-async def get_all_data(self) -> dict[str, Any]:
+    async def get_all_data(self) -> dict[str, Any]:
         """Récupère toutes les données de l'élève en parallèle.
         
         Returns:
