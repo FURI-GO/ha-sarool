@@ -81,6 +81,7 @@ class SaroolSensorBase(CoordinatorEntity, SensorEntity):
             "model": "Auto-école",
         }
 
+
 class SaroolNextLessonSensor(SaroolSensorBase):
     """Capteur pour la prochaine leçon de conduite."""
 
@@ -189,7 +190,8 @@ class SaroolNextLessonSensor(SaroolSensorBase):
             "numero": next_lesson.get("Numero", 0),
             "id": next_lesson.get("IdRdvEleve", ""),
         }
-    
+
+
 class SaroolBalanceSensor(SaroolSensorBase):
     """Capteur pour le solde de l'élève."""
 

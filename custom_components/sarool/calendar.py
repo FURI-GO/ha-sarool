@@ -56,7 +56,14 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
 
     @property
     def event(self) -> CalendarEvent | None:
-        """Retourne le prochain événement du calendrier."""
+        """Retourne le prochain événement du calendrier.
+        
+        Cette propriété est utilisée par Home Assistant pour afficher
+        le prochain événement dans l'interface.
+        
+        Returns:
+            Le prochain événement ou None
+        """
         if not self.coordinator.data:
             return None
 
@@ -83,7 +90,8 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
                 
                 if lesson_date > now:
                     future_lessons.append((lecon, lesson_date))
-            except (ValueError, KeyError):
+            except (ValueError, KeyError) as e:
+                _LOGGER.debug(f"Erreur parsing leçon: {e}")
                 continue
 
         if not future_lessons:
@@ -95,10 +103,22 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
 
         return self._convert_lesson_to_event(next_lesson)
 
-async def async_get_events(
+    async def async_get_events(
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
-        """Retourne les événements entre deux dates."""
+        """Retourne les événements entre deux dates.
+        
+        Cette méthode est appelée par Home Assistant pour afficher
+        les événements dans le calendrier.
+        
+        Args:
+            hass: Instance Home Assistant
+            start_date: Date de début
+            end_date: Date de fin
+            
+        Returns:
+            Liste des événements dans la période demandée
+        """
         if not self.coordinator.data:
             return []
 
@@ -131,8 +151,8 @@ async def async_get_events(
                 continue
 
         return events
-   
-def _convert_lesson_to_event(self, lecon: dict[str, Any]) -> CalendarEvent:
+
+    def _convert_lesson_to_event(self, lecon: dict[str, Any]) -> CalendarEvent:
         """Convertit une leçon Sarool en événement de calendrier.
         
         Args:
@@ -143,6 +163,7 @@ def _convert_lesson_to_event(self, lecon: dict[str, Any]) -> CalendarEvent:
         """
         from zoneinfo import ZoneInfo
         
+        # Timezone française (l'API retourne des dates locales françaises)
         paris_tz = ZoneInfo("Europe/Paris")
         
         # Parser la date

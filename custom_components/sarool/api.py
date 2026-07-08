@@ -142,44 +142,11 @@ class SaroolApiClient:
         except ClientError as err:
             raise SaroolApiError(f"Erreur de connexion: {err}") from err
 
-    async def get_student_planning(
-        self, date_debut: datetime, date_fin: datetime
-    ) -> dict[str, Any]:
-        """Récupère le planning de l'élève (F3).
-        
-        Args:
-            date_debut: Date de début de recherche
-            date_fin: Date de fin de recherche
-            
-        Returns:
-            Dictionnaire avec la liste des rendez-vous
-        """
-        try:
-            params = {
-                "du": date_debut.isoformat(),
-                "au": date_fin.isoformat(),
-            }
-            async with self._session.get(
-                API_F3, headers=self._get_headers(), params=params
-            ) as response:
-                if response.status == 200:
-                    return await response.json()
-                elif response.status == 401:
-                    raise SaroolApiError("Échec d'authentification")
-                elif response.status == 404:
-                    raise SaroolApiError("Fiche élève introuvable")
-                elif response.status == 412:
-                    raise SaroolApiError("Période de recherche érronée")
-                else:
-                    raise SaroolApiError(f"Erreur API: {response.status}")
-        except ClientError as err:
-            raise SaroolApiError(f"Erreur de connexion: {err}") from err
-
     async def get_student_lessons(self) -> dict[str, Any]:
         """Récupère la liste complète des leçons de l'élève (F2/Lecons).
         
         Cette méthode retourne TOUTES les leçons (passées et futures)
-        sans limitation de date.
+        sans limitation de date. C'est plus simple et complet que F3.
         
         Returns:
             Dictionnaire avec la liste des leçons
@@ -239,16 +206,18 @@ class SaroolApiClient:
     async def get_all_data(self) -> dict[str, Any]:
         """Récupère toutes les données de l'élève en parallèle.
         
+        Utilise F2/Lecons au lieu de F3 pour obtenir TOUTES les leçons
+        sans avoir à spécifier de dates.
+        
         Returns:
             Dictionnaire avec toutes les données combinées
         """
         try:
             # Récupérer toutes les données en parallèle
-            # On utilise F2/Lecons au lieu de F3 car il retourne TOUTES les leçons
             info, recap, lessons, user_data = await asyncio.gather(
                 self.get_student_info(),
                 self.get_student_recap(),
-                self.get_student_lessons(),  # ← Nouvelle méthode
+                self.get_student_lessons(),  # Nouvelle méthode F2/Lecons
                 self.get_user_data(),
                 return_exceptions=True,
             )
@@ -261,7 +230,7 @@ class SaroolApiClient:
             return {
                 "info": info,
                 "recap": recap,
-                "lessons": lessons,  # ← Leçons au lieu de planning
+                "lessons": lessons,  # Leçons au lieu de planning
                 "user_data": user_data,
             }
         except Exception as err:
