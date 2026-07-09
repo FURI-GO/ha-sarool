@@ -136,6 +136,9 @@ Ce projet est sous licence MIT.
 Cette intégration n'est pas officielle et n'est pas affiliée à Sarool.
 Utilisez-la à vos propres risques.
 
+⚠️ Cette intégration n'est pas affiliée, associée, autorisée, approuvée par, 
+ou officiellement liée à Sarool de quelque manière que ce soit.
+
 ## 👨‍💻 Auteur
 
 Créé par [@FURI-GO](https://github.com/FURI-GO)

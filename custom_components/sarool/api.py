@@ -142,34 +142,23 @@ class SaroolApiClient:
         except ClientError as err:
             raise SaroolApiError(f"Erreur de connexion: {err}") from err
 
-    async def get_student_planning(
-        self, date_debut: datetime, date_fin: datetime
-    ) -> dict[str, Any]:
-        """Récupère le planning de l'élève (F3).
+    async def get_student_lessons(self) -> dict[str, Any]:
+        """Récupère la liste complète des leçons de l'élève (F2/Lecons).
         
-        Args:
-            date_debut: Date de début de recherche
-            date_fin: Date de fin de recherche
-            
+        Cette méthode retourne TOUTES les leçons (passées et futures)
+        sans limitation de date. C'est plus simple et complet que F3.
+        
         Returns:
-            Dictionnaire avec la liste des rendez-vous
+            Dictionnaire avec la liste des leçons
         """
         try:
-            params = {
-                "du": date_debut.isoformat(),
-                "au": date_fin.isoformat(),
-            }
             async with self._session.get(
-                API_F3, headers=self._get_headers(), params=params
+                f"{API_F2}/Lecons", headers=self._get_headers()
             ) as response:
                 if response.status == 200:
                     return await response.json()
                 elif response.status == 401:
                     raise SaroolApiError("Échec d'authentification")
-                elif response.status == 404:
-                    raise SaroolApiError("Fiche élève introuvable")
-                elif response.status == 412:
-                    raise SaroolApiError("Période de recherche érronée")
                 else:
                     raise SaroolApiError(f"Erreur API: {response.status}")
         except ClientError as err:
@@ -217,33 +206,31 @@ class SaroolApiClient:
     async def get_all_data(self) -> dict[str, Any]:
         """Récupère toutes les données de l'élève en parallèle.
         
+        Utilise F2/Lecons au lieu de F3 pour obtenir TOUTES les leçons
+        sans avoir à spécifier de dates.
+        
         Returns:
             Dictionnaire avec toutes les données combinées
         """
-        # Calculer les dates pour le planning (7 prochains jours)
-        from datetime import timedelta
-        now = datetime.now()
-        date_fin = now + timedelta(days=7)
-
         try:
             # Récupérer toutes les données en parallèle
-            info, recap, planning, user_data = await asyncio.gather(
+            info, recap, lessons, user_data = await asyncio.gather(
                 self.get_student_info(),
                 self.get_student_recap(),
-                self.get_student_planning(now, date_fin),
+                self.get_student_lessons(),  # Nouvelle méthode F2/Lecons
                 self.get_user_data(),
                 return_exceptions=True,
             )
 
             # Vérifier les erreurs
-            for data in [info, recap, planning, user_data]:
+            for data in [info, recap, lessons, user_data]:
                 if isinstance(data, Exception):
                     raise data
 
             return {
                 "info": info,
                 "recap": recap,
-                "planning": planning,
+                "lessons": lessons,  # Leçons au lieu de planning
                 "user_data": user_data,
             }
         except Exception as err:
