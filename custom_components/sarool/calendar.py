@@ -21,7 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Configure le calendrier Sarool.
-    
+
     Args:
         hass: Instance Home Assistant
         entry: Entrée de configuration
@@ -34,11 +34,11 @@ async def async_setup_entry(
 
 
 class SaroolCalendar(CoordinatorEntity, CalendarEntity):
-    """Calendrier affichant le planning des leçons Sarool."""
+    """Calendrier affichant le planning des leçons Sarool (confirmées + prévisionnelles)."""
 
     def __init__(self, coordinator: SaroolDataCoordinator, entry: ConfigEntry) -> None:
         """Initialise le calendrier.
-        
+
         Args:
             coordinator: Coordinateur de données
             entry: Entrée de configuration
@@ -54,21 +54,38 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
             "model": "Auto-école",
         }
 
+    def _get_all_lessons(self) -> list[dict[str, Any]]:
+        """Récupère et fusionne les leçons confirmées et prévisionnelles.
+
+        Les leçons confirmées viennent de F2/Lecons.
+        Les leçons prévisionnelles viennent de F2 -> Prestations (même appel API,
+        données déjà présentes dans le récap).
+
+        Returns:
+            Liste combinée de toutes les leçons
+        """
+        if not self.coordinator.data:
+            return []
+
+        lessons_data = self.coordinator.data.get("lessons", {})
+        recap_data = self.coordinator.data.get("recap", {})
+
+        lecons_confirmees = lessons_data.get("Lecons", [])
+        lecons_previsionnelles = recap_data.get("Prestations", [])
+
+        return lecons_confirmees + lecons_previsionnelles
+
     @property
     def event(self) -> CalendarEvent | None:
         """Retourne le prochain événement du calendrier.
-        
+
         Cette propriété est utilisée par Home Assistant pour afficher
         le prochain événement dans l'interface.
-        
+
         Returns:
             Le prochain événement ou None
         """
-        if not self.coordinator.data:
-            return None
-
-        lessons_data = self.coordinator.data.get("lessons", {})
-        lecons = lessons_data.get("Lecons", [])
+        lecons = self._get_all_lessons()
 
         if not lecons:
             return None
@@ -83,11 +100,11 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
             try:
                 if lecon.get("IsAnnule", 0) == 1:
                     continue
-                    
+
                 date_str = lecon["Date"]
                 lesson_date_naive = datetime.fromisoformat(date_str)
                 lesson_date = lesson_date_naive.replace(tzinfo=paris_tz)
-                
+
                 if lesson_date > now:
                     future_lessons.append((lecon, lesson_date))
             except (ValueError, KeyError) as e:
@@ -107,23 +124,19 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
         self, hass: HomeAssistant, start_date: datetime, end_date: datetime
     ) -> list[CalendarEvent]:
         """Retourne les événements entre deux dates.
-        
+
         Cette méthode est appelée par Home Assistant pour afficher
         les événements dans le calendrier.
-        
+
         Args:
             hass: Instance Home Assistant
             start_date: Date de début
             end_date: Date de fin
-            
+
         Returns:
             Liste des événements dans la période demandée
         """
-        if not self.coordinator.data:
-            return []
-
-        lessons_data = self.coordinator.data.get("lessons", {})
-        lecons = lessons_data.get("Lecons", [])
+        lecons = self._get_all_lessons()
 
         from zoneinfo import ZoneInfo
         paris_tz = ZoneInfo("Europe/Paris")
@@ -135,10 +148,10 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
                 # Ignorer les leçons annulées
                 if lecon.get("IsAnnule", 0) == 1:
                     continue
-                
+
                 date_str = lecon["Date"]
                 duree = lecon.get("Duree", 60)  # Durée en minutes
-                
+
                 lesson_start_naive = datetime.fromisoformat(date_str)
                 lesson_start = lesson_start_naive.replace(tzinfo=paris_tz)
                 lesson_end = lesson_start + timedelta(minutes=duree)
@@ -154,42 +167,51 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
 
     def _convert_lesson_to_event(self, lecon: dict[str, Any]) -> CalendarEvent:
         """Convertit une leçon Sarool en événement de calendrier.
-        
+
         Args:
-            lecon: Dictionnaire représentant une leçon Sarool
-            
+            lecon: Dictionnaire représentant une leçon Sarool (confirmée ou prévisionnelle)
+
         Returns:
             CalendarEvent pour Home Assistant
         """
         from zoneinfo import ZoneInfo
-        
+
         # Timezone française (l'API retourne des dates locales françaises)
         paris_tz = ZoneInfo("Europe/Paris")
-        
+
         # Parser la date
         date_str = lecon["Date"]
         duree = lecon.get("Duree", 60)  # Durée en minutes
-        
+
         start_naive = datetime.fromisoformat(date_str)
         start = start_naive.replace(tzinfo=paris_tz)
         end = start + timedelta(minutes=duree)
 
-        # Construire le titre
-        libelle = lecon.get("Libelle", "Leçon de conduite")
+        # Détecter si c'est une leçon prévisionnelle (via le libellé Sarool)
+        libelle = (lecon.get("Libelle") or "Leçon de conduite").strip()
+        is_previsionnel = "prévisionnel" in libelle.lower()
+
         formateur = lecon.get("Formateur", "")
         numero = lecon.get("Numero", "")
-        
-        if formateur:
+
+        # Construire le titre
+        if is_previsionnel:
+            title = f"🔮 {libelle} #{numero}"
+        elif formateur:
             title = f"{libelle} #{numero} - {formateur}"
         else:
             title = f"{libelle} #{numero}"
 
+        # Déterminer le lieu : si un commentaire existe, c'est que la leçon
+        # a lieu ailleurs qu'à l'auto-école (ex: "gare"). Sinon, par défaut,
+        # c'est à l'auto-école.
+        commentaire = (lecon.get("Commentaire") or "").strip()
+        location = commentaire.capitalize() if commentaire else "Auto-école"
+
         # Construire la description
         description_parts = []
-        if lecon.get("LieuRdv"):
-            description_parts.append(f"Lieu: {lecon['LieuRdv']}")
-        if lecon.get("Commentaire"):
-            description_parts.append(f"Commentaire: {lecon['Commentaire']}")
+        if is_previsionnel:
+            description_parts.append("⚠️ Créneau prévisionnel, pas encore confirmé")
         if lecon.get("SuiviPedago"):
             description_parts.append(f"Suivi: {lecon['SuiviPedago']}")
 
@@ -200,5 +222,5 @@ class SaroolCalendar(CoordinatorEntity, CalendarEntity):
             end=end,
             summary=title,
             description=description,
-            location=lecon.get("LieuRdv"),
+            location=location,
         )
