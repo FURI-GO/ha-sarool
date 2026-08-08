@@ -103,7 +103,8 @@ class SaroolNextLessonSensor(SaroolSensorBase):
             return None
 
         lessons_data = self.coordinator.data.get("lessons", {})
-        lecons = lessons_data.get("Lecons", [])
+        recap_data = self.coordinator.data.get("recap", {})
+        lecons = lessons_data.get("Lecons", []) + recap_data.get("Prestations", [])
 
         if not lecons:
             return None
@@ -150,7 +151,8 @@ class SaroolNextLessonSensor(SaroolSensorBase):
             return {}
 
         lessons_data = self.coordinator.data.get("lessons", {})
-        lecons = lessons_data.get("Lecons", [])
+        recap_data = self.coordinator.data.get("recap", {})
+        lecons = lessons_data.get("Lecons", []) + recap_data.get("Prestations", [])
 
         if not lecons:
             return {}
@@ -189,6 +191,7 @@ class SaroolNextLessonSensor(SaroolSensorBase):
             "duree": next_lesson.get("Duree", 0),
             "numero": next_lesson.get("Numero", 0),
             "id": next_lesson.get("IdRdvEleve", ""),
+            "previsionnel": "prévisionnel" in (next_lesson.get("Libelle") or "").lower(),
         }
 
 
